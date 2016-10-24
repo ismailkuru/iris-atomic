@@ -15,24 +15,19 @@ Proof. by intros ?%subG_inG. Qed.
 Section atomic_sync.
   Context `{EqDecision A, !heapG Σ, !lockG Σ, !inG Σ (prodR fracR (dec_agreeR A))} (N : namespace).
 
+  (* TODO: Rename and make opaque; the fact that this is a half should not be visible
+           to the user. *)
   Definition gHalf (γ: gname) g : iProp Σ := own γ ((1/2)%Qp, DecAgree g).
 
-  Definition atomic_triple'
-             (α: val → A → iProp Σ)
-             (β: val → A → A → val → iProp Σ)
-             (Ei Eo: coPset)
-             (f x: val) γ : iProp Σ :=
-    (∀ P Q, atomic_triple_base A (fun g => gHalf γ g ★ □ α x g)
-                                 (fun g v => ∃ g':A, gHalf γ g' ★ β x g g' v)
-                                 Ei Eo
-                                (f x) (P x) (fun _ => Q x))%I.
+  Definition atomic_triple' γ (f: val)
+             (α: A → val → iProp Σ)
+             (β: A → A → val → val → iProp Σ)
+             (Ei Eo: coPset) : iProp Σ :=
+    (∀ x, atomic_triple A (fun g => gHalf γ g ★ □ α g x)%I
+                    (fun g v => ∃ g':A, gHalf γ g' ★ β g g' x v)%I
+                    Ei Eo (f x))%I.
 
-  Definition sync (mk_syncer: val) : val :=
-    λ: "f_seq" "l",
-       let: "s" := mk_syncer #() in
-       "s" ("f_seq" "l").
-
-  Definition seq_spec (f: val) (ϕ: val → A → iProp Σ) α β (E: coPset) :=
+(*  Definition seq_spec (f: val) (ϕ: val → A → iProp Σ) α β (E: coPset) :=
       ∀ (Φ: val → iProp Σ) (l: val),
          {{ True }} f l {{ f', ■ (∀ (x: val) (Φ: val → iProp Σ) (g: A),
                                heapN ⊥ N →
@@ -44,15 +39,30 @@ Section atomic_sync.
      of computation. The client side of such triple will have to prove that the
      specific post-condition he wants can be lvs'd from whatever threaded together
      by magic wands. The library side, when proving seq_spec, will always have
-     a view shift at the end of evalutation, which is exactly what we need.  *)
+     a view shift at the end of evalutation, which is exactly what we need.  *)*)
 
-  Lemma atomic_spec (mk_syncer f_seq l: val) (ϕ: val → A → iProp Σ) α β Ei:
-      ∀ (g0: A),
-        heapN ⊥ N → seq_spec f_seq ϕ α β ⊤ →
-        mk_syncer_spec N mk_syncer →
-        heap_ctx ★ ϕ l g0
-        ⊢ WP (sync mk_syncer) f_seq l {{ f, ∃ γ, gHalf γ g0 ★ ∀ x, □ atomic_triple' α β Ei ⊤ f x γ  }}.
+  Definition seq_spec ϕ f (α: A → val → iProp Σ) (β: A → A → val → val → iProp Σ) :=
+    (□ ∀ g x Φ, (ϕ g ★ α g x ★ (∀ g' v, ϕ g' ★ β g g' x v -★ Φ v) -★ WP f #() {{ Φ }}))%I.
+
+  (* TODO: Use our usual style with a generic post-condition. *)
+  (* TODO: We could get rid of the x, and hard-code a unit. That would
+     be no loss in expressiveness, but probably more annoying to apply.
+     How much more annoying? And how much to we gain in terms of things
+     becomign easier to prove? *)
+  (* This is really the core of the spec: It says that executing `s` on `f`
+     turns the sequential spec with f, α, β into the concurrent triple with f', α, β. *)
+  Definition is_atomic_syncer (ϕ: A → iProp Σ) (s: val) γ := 
+    (□ ∀ (f: val) α β, seq_spec ϕ f α β -★ WP s f {{ f', atomic_triple' γ f' α β ∅ ⊤ }})%I.
+
+  Definition atomic_syncer_spec (atomic_syncer: val) :=
+    ∀ (g0: A) (ϕ: A → iProp Σ) (Φ: val → iProp Σ),
+      heapN ⊥ N →
+      heap_ctx ★ ϕ g0 ★ (∀ γ s, gHalf γ g0 ★ is_atomic_syncer ϕ s γ -★ Φ s) ⊢ WP atomic_syncer #() {{ Φ }}.
+
+  Lemma atomic_spec (mk_syncer: val):
+      mk_syncer_spec N mk_syncer → atomic_syncer_spec mk_syncer.
   Proof.
+    (* TODO: Proof needs updating. *)
     iIntros (g0 HN Hseq Hsync) "[#Hh Hϕ]".
     iVs (own_alloc (((1 / 2)%Qp, DecAgree g0) ⋅ ((1 / 2)%Qp, DecAgree g0))) as (γ) "[Hg1 Hg2]".
     { by rewrite pair_op dec_agree_idemp. }

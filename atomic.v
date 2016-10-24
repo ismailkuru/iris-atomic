@@ -7,6 +7,7 @@ Import uPred.
 Section atomic.
   Context `{irisG Λ Σ} (A: Type).
 
+  (* TODO RJ: IMHO it would make more sense to have the outer mask first, after all, that's what the shifts "starts" with. *)
   Definition atomic_triple_base
              (α: A → iProp Σ) (* atomic pre-condition *)
              (β: A → val _ → iProp Σ) (* atomic post-condition *)
